@@ -341,7 +341,7 @@
   </div>
 </header>
 
-<div id="mobileMenu" style="display:none; background:var(--brown-dark); border-bottom:1px solid var(--line-onbrown); padding:18px 32px;">
+<div id="mobileMenu" style="display:none; position:fixed; top:64px; left:0; right:0; z-index:55; background:var(--brown-dark); border-bottom:1px solid var(--line-onbrown); padding:18px 32px; max-height:calc(100vh - 64px); overflow-y:auto; box-shadow:0 16px 30px -10px rgba(0,0,0,.4);">
   <a href="#inicio" style="display:block; padding:10px 0; font-family:'Poppins',sans-serif; text-transform:uppercase; font-size:.78rem; letter-spacing:.08em; color:var(--tan-light);">Inicio</a>
   <a href="#nosotros" style="display:block; padding:10px 0; font-family:'Poppins',sans-serif; text-transform:uppercase; font-size:.78rem; letter-spacing:.08em; color:var(--tan-light);">Nosotros</a>
   <a href="#servicios" style="display:block; padding:10px 0; font-family:'Poppins',sans-serif; text-transform:uppercase; font-size:.78rem; letter-spacing:.08em; color:var(--tan-light);">Servicios</a>
@@ -677,12 +677,11 @@
   let ownerAuthSession = null;   // sesión del DUEÑO (supabaseOwner) — separada
   let ownerProfile = null;       // perfil del dueño
 
-  // Cuenta interna de Supabase que representa al dueño. Se crea UNA vez en
-  // Supabase (Authentication → Users → Add user) con este email y la
-  // contraseña OWNER_PASSWORD. El dueño nunca ve este email: solo escribe
-  // "Leandro" y la contraseña en la web.
-  const OWNER_NAME = 'leandro';
-  const OWNER_PASSWORD = '000000';
+  // Cuenta del dueño en Supabase. OWNER_EMAIL solo se usa para rellenar el
+  // placeholder del campo de email en el formulario — el login real
+  // comprueba directamente contra lo que el dueño tenga puesto en Supabase
+  // (Authentication → Users), así que si algún día cambia su contraseña
+  // ahí, seguirá entrando sin tocar este código.
   const OWNER_EMAIL = 'leandro_leo_3@hotmail.com';
 
   function pad2(n){ return String(n).padStart(2,'0'); }
@@ -1094,20 +1093,20 @@
     const body = document.getElementById('ownerBody');
     body.innerHTML = `
       <p class="field-note" style="margin-bottom:18px;">Acceso solo para el equipo de la barbería.</p>
-      <div class="field"><label>Nombre</label><input type="text" id="ownerName" placeholder="Leandro"></div>
+      <div class="field"><label>Email</label><input type="email" id="ownerEmailInput" placeholder="${OWNER_EMAIL}"></div>
       <div class="field"><label>Contraseña</label><input type="password" id="ownerPass" placeholder="••••••"></div>
-      <div class="field-error" id="ownerError">Nombre o contraseña incorrectos.</div>
+      <div class="field-error" id="ownerError">Email o contraseña incorrectos.</div>
       <button class="btn solid block" id="ownerEnterBtn">Entrar</button>
     `;
     document.getElementById('ownerEnterBtn').addEventListener('click', async ()=>{
-      const name = document.getElementById('ownerName').value.trim().toLowerCase();
+      const email = document.getElementById('ownerEmailInput').value.trim();
       const pass = document.getElementById('ownerPass').value;
       const err = document.getElementById('ownerError');
       err.classList.remove('show');
-      if(name !== OWNER_NAME || pass !== OWNER_PASSWORD){ err.classList.add('show'); return; }
-      const { error } = await supabaseOwner.auth.signInWithPassword({ email: OWNER_EMAIL, password: OWNER_PASSWORD });
+      if(!email || !pass){ err.textContent = 'Escribe tu email y tu contraseña.'; err.classList.add('show'); return; }
+      const { error } = await supabaseOwner.auth.signInWithPassword({ email, password: pass });
       if(error){
-        err.textContent = 'La cuenta del dueño todavía no está creada en Supabase (ver instrucciones).';
+        err.textContent = 'Email o contraseña incorrectos, o la cuenta todavía no existe en Supabase.';
         err.classList.add('show');
         return;
       }
@@ -1527,16 +1526,18 @@
   const burger = document.getElementById('burgerBtn');
   const menu = document.getElementById('mobileMenu');
   burger.addEventListener('click', ()=>{ menu.style.display = menu.style.display === 'block' ? 'none' : 'block'; });
-  menu.querySelectorAll('a').forEach(a=> a.addEventListener('click', ()=> menu.style.display = 'none'));
 
   /* ================= NAVEGACIÓN INTERNA (evita que el visor externo
-     intercepte los enlaces "#seccion" como si fueran salidas de la web) ================= */
+     intercepte los enlaces "#seccion" como si fueran salidas de la web,
+     y cierra primero el menú móvil ANTES de iniciar el scroll suave,
+     para que no compitan entre sí y la página no "salte") ================= */
   document.querySelectorAll('a[href^="#"]').forEach(a=>{
     a.addEventListener('click', (e)=>{
       const id = a.getAttribute('href').slice(1);
       const target = document.getElementById(id);
       if(target){
         e.preventDefault();
+        if(menu.style.display === 'block'){ menu.style.display = 'none'; }
         target.scrollIntoView({ behavior:'smooth', block:'start' });
       }
     });
