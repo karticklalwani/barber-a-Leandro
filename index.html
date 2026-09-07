@@ -32,7 +32,7 @@
   }
 
   *{ box-sizing:border-box; }
-  html{ scroll-behavior:smooth; }
+  html{ scroll-behavior:smooth; overflow-x:hidden; }
   @media (prefers-reduced-motion: reduce){ html{ scroll-behavior:auto; } *{ animation-duration:0.001ms !important; transition-duration:0.001ms !important; } }
 
   body{
@@ -1217,6 +1217,7 @@
         <button type="button" class="btn ghost-sm" data-tab="horario" style="flex:1; min-width:80px; justify-content:center;">Horario</button>
         <button type="button" class="btn ghost-sm" data-tab="servicios" style="flex:1; min-width:80px; justify-content:center;">Servicios</button>
         <button type="button" class="btn ghost-sm" data-tab="galeria" style="flex:1; min-width:80px; justify-content:center;">Galería</button>
+        <button type="button" class="btn ghost-sm" data-tab="resenas" style="flex:1; min-width:80px; justify-content:center;">Reseñas</button>
       </div>
       <div id="ownerTabBody"></div>
       <button class="btn block" id="ownerLogoutBtn" style="margin-top:16px;">Cerrar sesión</button>
@@ -1236,6 +1237,7 @@
           <div class="bi-actions">
             ${b.status==='pendiente' ? `<button class="btn ghost-sm" data-act="confirmada" data-id="${b.id}">Confirmar</button>` : ''}
             ${(b.status==='pendiente'||b.status==='confirmada') ? `<button class="btn ghost-sm" data-act="completada" data-id="${b.id}">Completar</button><button class="btn ghost-sm" data-act="cancelada" data-id="${b.id}">Cancelar</button>` : ''}
+            <button class="btn ghost-sm" data-del-booking="${b.id}">Eliminar</button>
           </div>
         </div>
       `).join('');
@@ -1245,6 +1247,59 @@
           const status = btn.getAttribute('data-act');
           const { error } = await supabaseOwner.from('bookings').update({ status }).eq('id', id);
           if(!error){ toast('Cita actualizada'); renderOwnerDashboard(); }
+        });
+      });
+      tabBody.querySelectorAll('[data-del-booking]').forEach(btn=>{
+        btn.addEventListener('click', async ()=>{
+          const id = btn.getAttribute('data-del-booking');
+          const { error } = await supabaseOwner.from('bookings').delete().eq('id', id);
+          if(error){ toast('No se pudo eliminar (falta la política de borrado en Supabase).'); return; }
+          toast('Cita eliminada');
+          renderOwnerDashboard();
+        });
+      });
+    }
+
+    async function renderResenasTab(){
+      const tabBody = document.getElementById('ownerTabBody');
+      tabBody.innerHTML = '<p class="empty-note">Cargando reseñas…</p>';
+      const { data: revs, error } = await supabaseOwner.from('reviews').select('*').order('created_at', { ascending:false });
+      if(error){ tabBody.innerHTML = '<p class="empty-note">No se pudieron cargar las reseñas.</p>'; return; }
+      if(!revs || revs.length === 0){ tabBody.innerHTML = '<p class="empty-note">Todavía no hay reseñas.</p>'; return; }
+      tabBody.innerHTML = revs.map(r => `
+        <div class="booking-item" data-rev-row="${r.id}">
+          <div class="bi-top"><span class="bi-service">${r.name} · ${'★'.repeat(r.rating)}${'☆'.repeat(5-r.rating)}</span></div>
+          <div class="bi-when">${fmtDate((r.created_at||'').slice(0,10))}${r.service ? ' · '+r.service : ''}</div>
+          <div class="bi-who" style="margin-top:6px;">${r.comment}</div>
+          <div class="field" style="margin-top:10px;">
+            <label>Respuesta pública (opcional)</label>
+            <textarea class="rev-reply-input" placeholder="Escribe una respuesta visible en la web...">${r.owner_reply || ''}</textarea>
+          </div>
+          <div class="bi-actions">
+            <button class="btn ghost-sm" data-save-reply="${r.id}">Guardar respuesta</button>
+            <button class="btn ghost-sm" data-del-review="${r.id}">Eliminar reseña</button>
+          </div>
+        </div>
+      `).join('');
+      tabBody.querySelectorAll('[data-save-reply]').forEach(btn=>{
+        btn.addEventListener('click', async ()=>{
+          const id = btn.getAttribute('data-save-reply');
+          const row = btn.closest('[data-rev-row]');
+          const reply = row.querySelector('.rev-reply-input').value.trim();
+          const { error } = await supabaseOwner.from('reviews').update({ owner_reply: reply }).eq('id', id);
+          if(error){ toast('No se pudo guardar la respuesta (falta la política en Supabase).'); return; }
+          toast('Respuesta guardada');
+          loadReviews();
+        });
+      });
+      tabBody.querySelectorAll('[data-del-review]').forEach(btn=>{
+        btn.addEventListener('click', async ()=>{
+          const id = btn.getAttribute('data-del-review');
+          const { error } = await supabaseOwner.from('reviews').delete().eq('id', id);
+          if(error){ toast('No se pudo eliminar (falta la política de borrado en Supabase).'); return; }
+          toast('Reseña eliminada');
+          renderResenasTab();
+          loadReviews();
         });
       });
     }
@@ -1259,6 +1314,7 @@
         else if(tab==='horario') renderOwnerSchedule(document.getElementById('ownerTabBody'));
         else if(tab==='servicios') renderOwnerServices(document.getElementById('ownerTabBody'));
         else if(tab==='galeria') renderOwnerGallery(document.getElementById('ownerTabBody'));
+        else if(tab==='resenas') renderResenasTab();
       });
     });
     renderCitasTab();
@@ -1477,6 +1533,7 @@
         <div class="top"><span class="name">${r.name}</span><span class="stars">${'★'.repeat(r.rating)}${'☆'.repeat(5-r.rating)}</span></div>
         <div class="date">${fmtDate((r.created_at||'').slice(0,10) || todayISO())}${r.service ? ' · '+r.service : ''}</div>
         <div class="comment" style="margin-top:8px;">${r.comment}</div>
+        ${r.owner_reply ? `<div style="margin-top:12px; padding:12px 14px; background:var(--cream); border-radius:var(--r-sm); border-left:3px solid var(--gold);"><strong style="font-family:'Poppins',sans-serif; font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--gold);">Respuesta de The Barbershop Leandro</strong><p style="margin:6px 0 0; font-size:.86rem; color:var(--ink-soft);">${r.owner_reply}</p></div>` : ''}
       </div>
     `).join('');
   }
